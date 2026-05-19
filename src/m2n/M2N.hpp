@@ -30,7 +30,7 @@ struct WhiteboxAccessor;
  */
 class M2N {
 public:
-  M2N(com::PtrCommunication intraComm, DistributedComFactory::SharedPointer distrFactory, bool useOnlyPrimaryCom = false, bool useTwoLevelInit = false);
+  M2N(com::PtrCommunication intraComm, DistributedComFactory::SharedPointer distrFactory, bool useOnlyPrimaryCom = false, bool useTwoLevelInit = false, bool useCoRT = false);
 
   /// Destructor, empty.
   ~M2N();
@@ -223,6 +223,10 @@ public:
   {
     return _useTwoLevelInit;
   }
+  bool usesCoRTCommunication() const
+  {
+    return _useCoRT;
+  }
 
 private:
   logging::Logger _log{"m2n::M2N"};
@@ -252,6 +256,8 @@ private:
 
   /// use the two-level initialization concept
   bool _useTwoLevelInit = false;
+
+  bool _useCoRT = false;
 
   // @brief To allow access to _useOnlyPrimaryCom
   friend struct WhiteboxAccessor;

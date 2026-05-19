@@ -8,6 +8,7 @@
 #include "com/SharedPointer.hpp"
 #include "com/SocketCommunicationFactory.hpp"
 #include "logging/LogMacros.hpp"
+#include "m2n/CoRTComFactory.hpp"
 #include "m2n/DistributedComFactory.hpp"
 #include "m2n/GatherScatterComFactory.hpp"
 #include "m2n/M2N.hpp"
@@ -93,6 +94,10 @@ M2NConfiguration::M2NConfiguration(xml::XMLTag &parent)
   attrTwoLevel.setDocumentation("Use a two-level initialization scheme. "
                                 "Recommended for large parallel runs (>5000 MPI ranks).");
 
+  XMLAttribute<bool> attrCoRT(ATTR_USE_CORT, false);
+  attrCoRT.setDocumentation("Enable the CoRT communication aggregation mechanism (Innovation 2). "
+                            "Requires MPI.");
+
   auto attrFrom = XMLAttribute<std::string>("acceptor")
                       .setDocumentation(
                           "First participant name involved in communication. For performance reasons, we recommend to use "
@@ -105,6 +110,7 @@ M2NConfiguration::M2NConfiguration(xml::XMLTag &parent)
     tag.addAttribute(attrTo);
     tag.addAttribute(attrEnforce);
     tag.addAttribute(attrTwoLevel);
+    tag.addAttribute(attrCoRT);
     parent.addSubtag(tag);
   }
 }
@@ -136,10 +142,19 @@ void M2NConfiguration::xmlTagCallback(const xml::ConfigurationContext &context, 
     checkDuplicates(acceptor, connector);
     bool enforceGatherScatter = tag.getBooleanAttributeValue(ATTR_ENFORCE_GATHER_SCATTER);
     bool useTwoLevelInit      = tag.getBooleanAttributeValue(ATTR_USE_TWO_LEVEL_INIT);
+    bool useCoRT              = tag.getBooleanAttributeValue(ATTR_USE_CORT);
 
     if (enforceGatherScatter && useTwoLevelInit) {
       throw std::runtime_error{std::string{"A gather-scatter m2n communication cannot use two-level initialization. Please switch either "} + "\"" + ATTR_ENFORCE_GATHER_SCATTER + "\" or \"" + ATTR_USE_TWO_LEVEL_INIT + "\" off."};
     }
+    if (useCoRT && enforceGatherScatter) {
+      throw std::runtime_error{std::string{"A CoRT m2n communication cannot enforce gather-scatter. Please switch either "} + "\"" + ATTR_USE_CORT + "\" or \"" + ATTR_ENFORCE_GATHER_SCATTER + "\" off."};
+    }
+#ifdef PRECICE_NO_MPI
+    if (useCoRT) {
+      throw std::runtime_error{"CoRT m2n communication requires preCICE to be compiled with MPI support enabled."};
+    }
+#endif
     if (context.size == 1 && useTwoLevelInit) {
       throw std::runtime_error{"To use two-level initialization, both participants need to run in parallel. If you want to run in serial please switch two-level initialization off."};
     }
@@ -192,13 +207,15 @@ void M2NConfiguration::xmlTagCallback(const xml::ConfigurationContext &context, 
     DistributedComFactory::SharedPointer distrFactory;
     if (enforceGatherScatter) {
       distrFactory = std::make_shared<GatherScatterComFactory>(com);
+    } else if (useCoRT) {
+      distrFactory = std::make_shared<CoRTComFactory>(comFactory);
     } else {
       distrFactory = std::make_shared<PointToPointComFactory>(comFactory);
     }
     PRECICE_ASSERT(distrFactory.get() != nullptr);
 
     _m2ns.emplace_back(ConfiguredM2N{
-        std::make_shared<m2n::M2N>(com, distrFactory, false, useTwoLevelInit),
+        std::make_shared<m2n::M2N>(com, distrFactory, false, useTwoLevelInit, useCoRT),
         acceptor,
         connector});
   }

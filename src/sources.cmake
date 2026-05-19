@@ -169,6 +169,15 @@ target_sources(preciceCore
     src/m2n/PointToPointComFactory.hpp
     src/m2n/PointToPointCommunication.cpp
     src/m2n/PointToPointCommunication.hpp
+    src/m2n/CoRTComFactory.cpp
+    src/m2n/CoRTComFactory.hpp
+    src/m2n/CoRTCommunication.cpp
+    src/m2n/CoRTCommunication.hpp
+    src/m2n/cort/DoubleDataExchange.cpp
+    src/m2n/cort/DoubleDataExchange.hpp
+    src/m2n/cort/NodeTopology.cpp
+    src/m2n/cort/NodeTopology.hpp
+    src/m2n/cort/Transport.hpp
     src/m2n/SharedPointer.hpp
     src/m2n/config/M2NConfiguration.cpp
     src/m2n/config/M2NConfiguration.hpp

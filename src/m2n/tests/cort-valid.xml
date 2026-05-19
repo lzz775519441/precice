@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<configuration>
+  <m2n:sockets acceptor="A" connector="B" use-cort-communication="true" />
+</configuration>

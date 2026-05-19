@@ -59,6 +59,7 @@ private:
   const std::string ATTR_EXCHANGE_DIRECTORY     = "exchange-directory";
   const std::string ATTR_ENFORCE_GATHER_SCATTER = "enforce-gather-scatter";
   const std::string ATTR_USE_TWO_LEVEL_INIT     = "use-two-level-initialization";
+  const std::string ATTR_USE_CORT               = "use-cort-communication";
 
   std::vector<ConfiguredM2N> _m2ns;
 
