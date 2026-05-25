@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "DistributedCommunication.hpp"
+#include "m2n/DistributedCommunication.hpp"
 #include "com/SharedPointer.hpp"
 #include "logging/Logger.hpp"
 #include "mesh/SharedPointer.hpp"

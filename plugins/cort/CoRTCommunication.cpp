@@ -1,4 +1,4 @@
-#include "m2n/CoRTCommunication.hpp"
+#include "CoRTCommunication.hpp"
 #include <algorithm>
 #include <boost/io/ios_state.hpp>
 #include <functional>
@@ -18,9 +18,9 @@
 #include "com/Request.hpp"
 #include "logging/LogMacros.hpp"
 #include "m2n/DistributedCommunication.hpp"
-#include "m2n/cort/DoubleDataExchange.hpp"
-#include "m2n/cort/NodeTopology.hpp"
-#include "m2n/cort/Transport.hpp"
+#include "cort/DoubleDataExchange.hpp"
+#include "cort/NodeTopology.hpp"
+#include "cort/Transport.hpp"
 #include "mesh/Mesh.hpp"
 #include "precice/impl/Types.hpp"
 #include "profiling/Event.hpp"

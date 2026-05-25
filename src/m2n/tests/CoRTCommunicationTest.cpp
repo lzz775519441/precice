@@ -1,15 +1,19 @@
 #ifndef PRECICE_NO_MPI
 
 #include <Eigen/Core>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "com/SharedPointer.hpp"
 #include "com/SocketCommunicationFactory.hpp"
-#include "m2n/CoRTCommunication.hpp"
+#include "m2n/CoRTPluginAdapter.hpp"
+#include "m2n/DistributedComFactory.hpp"
+#include "m2n/DistributedCommunication.hpp"
 #include "m2n/M2N.hpp"
 #include "m2n/config/M2NConfiguration.hpp"
 #include "mesh/Mesh.hpp"
@@ -30,6 +34,68 @@ BOOST_AUTO_TEST_SUITE(CoRT)
 
 namespace {
 
+struct PluginCommunication {
+  DistributedComFactory::SharedPointer    factory;
+  DistributedCommunication::SharedPointer communication;
+};
+
+PluginCommunication makeCoRTCommunication(mesh::PtrMesh mesh)
+{
+  PluginCommunication pluginCommunication;
+  pluginCommunication.factory = createCoRTPluginComFactory(
+      std::make_shared<com::SocketCommunicationFactory>());
+  pluginCommunication.communication = pluginCommunication.factory->newDistributedCommunication(std::move(mesh));
+  return pluginCommunication;
+}
+
+class ScopedEnvironment {
+public:
+  ScopedEnvironment(std::string name, std::string value)
+      : _name(std::move(name))
+  {
+    if (const char *previousValue = std::getenv(_name.c_str())) {
+      _hadPreviousValue = true;
+      _previousValue    = previousValue;
+    }
+    setValue(_name, value);
+  }
+
+  ~ScopedEnvironment()
+  {
+    if (_hadPreviousValue) {
+      setValue(_name, _previousValue);
+    } else {
+      unsetValue(_name);
+    }
+  }
+
+  ScopedEnvironment(const ScopedEnvironment &) = delete;
+  ScopedEnvironment &operator=(const ScopedEnvironment &) = delete;
+
+private:
+  static void setValue(const std::string &name, const std::string &value)
+  {
+#ifdef _WIN32
+    _putenv_s(name.c_str(), value.c_str());
+#else
+    setenv(name.c_str(), value.c_str(), 1);
+#endif
+  }
+
+  static void unsetValue(const std::string &name)
+  {
+#ifdef _WIN32
+    _putenv_s(name.c_str(), "");
+#else
+    unsetenv(name.c_str());
+#endif
+  }
+
+  std::string _name;
+  std::string _previousValue;
+  bool        _hadPreviousValue = false;
+};
+
 std::vector<double> expandComponents(const std::vector<double> &values, int valueDimension)
 {
   std::vector<double> expanded;
@@ -49,11 +115,11 @@ void process(std::vector<double> &data)
   }
 }
 
-void runRoundtrip(const TestContext  &context,
-                  CoRTCommunication  &communication,
-                  std::vector<double> data,
-                  std::vector<double> expectedData,
-                  int                 valueDimension)
+void runRoundtrip(const TestContext       &context,
+                  DistributedCommunication &communication,
+                  std::vector<double>      data,
+                  std::vector<double>      expectedData,
+                  int                      valueDimension)
 {
   if (context.isNamed("A")) {
     communication.send(data, valueDimension);
@@ -74,7 +140,8 @@ void runCoRTComTest1(const TestContext &context)
 
   mesh::PtrMesh mesh(new mesh::Mesh("Mesh", 2, testing::nextMeshID()));
 
-  CoRTCommunication communication(std::make_shared<com::SocketCommunicationFactory>(), mesh);
+  auto  pluginCommunication = makeCoRTCommunication(mesh);
+  auto &communication       = *pluginCommunication.communication;
 
   std::vector<double> scalarData;
   std::vector<double> scalarExpectedData;
@@ -120,7 +187,8 @@ void runNoOverlapTest(const TestContext &context)
 
   mesh::PtrMesh mesh(new mesh::Mesh("Mesh", 2, testing::nextMeshID()));
 
-  CoRTCommunication communication(std::make_shared<com::SocketCommunicationFactory>(), mesh);
+  auto  pluginCommunication = makeCoRTCommunication(mesh);
+  auto &communication       = *pluginCommunication.communication;
 
   std::vector<double> data = {static_cast<double>(context.rank + 1)};
 
@@ -158,8 +226,9 @@ void runSameConnectionTest(const TestContext &context)
     mesh->setConnectedRanks({1});
   }
 
-  CoRTCommunication communication(std::make_shared<com::SocketCommunicationFactory>(), mesh);
-  std::vector<int>  receiveData;
+  auto  pluginCommunication = makeCoRTCommunication(mesh);
+  auto &communication       = *pluginCommunication.communication;
+  std::vector<int> receiveData;
 
   if (context.isNamed("A")) {
     communication.requestPreConnection("Solid", "Fluid");
@@ -185,8 +254,9 @@ void runCrossConnectionTest(const TestContext &context)
     mesh->setConnectedRanks({0});
   }
 
-  CoRTCommunication communication(std::make_shared<com::SocketCommunicationFactory>(), mesh);
-  std::vector<int>  receiveData;
+  auto  pluginCommunication = makeCoRTCommunication(mesh);
+  auto &communication       = *pluginCommunication.communication;
+  std::vector<int> receiveData;
 
   if (context.isNamed("A")) {
     communication.requestPreConnection("Solid", "Fluid");
@@ -210,8 +280,9 @@ void runEmptyConnectionTest(const TestContext &context)
     mesh->setConnectedRanks({0});
   }
 
-  CoRTCommunication communication(std::make_shared<com::SocketCommunicationFactory>(), mesh);
-  std::vector<int>  receiveData;
+  auto  pluginCommunication = makeCoRTCommunication(mesh);
+  auto &communication       = *pluginCommunication.communication;
+  std::vector<int> receiveData;
 
   if (context.isNamed("A")) {
     communication.requestPreConnection("Solid", "Fluid");
@@ -258,7 +329,8 @@ void runMeshBroadcastTest(const TestContext &context)
     mesh->setConnectedRanks({context.isPrimary() ? 0 : 1});
   }
 
-  CoRTCommunication communication(std::make_shared<com::SocketCommunicationFactory>(), mesh);
+  auto  pluginCommunication = makeCoRTCommunication(mesh);
+  auto &communication       = *pluginCommunication.communication;
 
   if (context.isNamed("A")) {
     communication.requestPreConnection("Solid", "Fluid");
@@ -304,7 +376,8 @@ void runCommunicationMapTest(const TestContext &context)
     mesh->setConnectedRanks({context.isPrimary() ? 0 : 1});
   }
 
-  CoRTCommunication communication(std::make_shared<com::SocketCommunicationFactory>(), mesh);
+  auto  pluginCommunication = makeCoRTCommunication(mesh);
+  auto &communication       = *pluginCommunication.communication;
 
   if (context.isNamed("A")) {
     communication.requestPreConnection("Solid", "Fluid");
@@ -354,7 +427,8 @@ void runTwoLevelDataExchangeTest(const TestContext &context)
   mesh::PtrMesh mesh(new mesh::Mesh("Mesh", 2, testing::nextMeshID()));
   mesh->setConnectedRanks({0, 1});
 
-  CoRTCommunication communication(std::make_shared<com::SocketCommunicationFactory>(), mesh);
+  auto  pluginCommunication = makeCoRTCommunication(mesh);
+  auto &communication       = *pluginCommunication.communication;
 
   std::vector<double> scalarData;
   std::vector<double> scalarExpectedData;
@@ -483,6 +557,24 @@ BOOST_AUTO_TEST_CASE(ConfigurationRejectsGatherScatter)
   PRECICE_TEST();
   BOOST_CHECK_THROW(configureM2N("cort-invalid-gather-scatter.xml"), std::runtime_error);
 }
+
+PRECICE_TEST_SETUP("A"_on(1_rank))
+BOOST_AUTO_TEST_CASE(ConfigurationRejectsMissingPlugin)
+{
+  PRECICE_TEST();
+  ScopedEnvironment pluginPath("PRECICE_CORT_PLUGIN", "/definitely/missing/libprecice-cort-plugin.so");
+  BOOST_CHECK_THROW(configureM2N("cort-valid.xml"), std::runtime_error);
+}
+
+#ifdef PRECICE_CORT_ABI_MISMATCH_PLUGIN_PATH
+PRECICE_TEST_SETUP("A"_on(1_rank))
+BOOST_AUTO_TEST_CASE(ConfigurationRejectsPluginABIMismatch)
+{
+  PRECICE_TEST();
+  ScopedEnvironment pluginPath("PRECICE_CORT_PLUGIN", PRECICE_CORT_ABI_MISMATCH_PLUGIN_PATH);
+  BOOST_CHECK_THROW(configureM2N("cort-valid.xml"), std::runtime_error);
+}
+#endif
 
 BOOST_AUTO_TEST_SUITE_END() // CoRT
 BOOST_AUTO_TEST_SUITE_END() // M2NTests

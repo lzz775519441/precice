@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-#include "m2n/cort/Transport.hpp"
+#include "cort/Transport.hpp"
 #include "precice/span.hpp"
 
 namespace precice::m2n::cort {

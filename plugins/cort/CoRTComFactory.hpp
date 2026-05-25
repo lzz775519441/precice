@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DistributedComFactory.hpp"
+#include "m2n/DistributedComFactory.hpp"
 #include "com/SharedPointer.hpp"
 #include "m2n/DistributedCommunication.hpp"
 #include "mesh/SharedPointer.hpp"

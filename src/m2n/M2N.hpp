@@ -231,13 +231,14 @@ public:
 private:
   logging::Logger _log{"m2n::M2N"};
 
-  /// mesh::getID() -> Pointer to distributed communication
-  std::map<int, DistributedCommunication::SharedPointer> _distComs;
-
   /// connection between the primary ranks of the connected participants
   com::PtrCommunication _interComm;
 
+  /// Factory must outlive distributed communications returned by plugin backends.
   DistributedComFactory::SharedPointer _distrFactory;
+
+  /// mesh::getID() -> Pointer to distributed communication
+  std::map<int, DistributedCommunication::SharedPointer> _distComs;
 
   bool _isPrimaryRankConnected = false;
 

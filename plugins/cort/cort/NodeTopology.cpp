@@ -1,4 +1,4 @@
-#include "m2n/cort/NodeTopology.hpp"
+#include "cort/NodeTopology.hpp"
 
 #include <stdexcept>
 #include <utility>

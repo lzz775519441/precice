@@ -1,4 +1,4 @@
-#include "m2n/cort/DoubleDataExchange.hpp"
+#include "cort/DoubleDataExchange.hpp"
 
 #include <algorithm>
 #include <map>
@@ -6,7 +6,7 @@
 #include <utility>
 
 #include "logging/LogMacros.hpp"
-#include "m2n/cort/NodeTopology.hpp"
+#include "cort/NodeTopology.hpp"
 #include "utils/IntraComm.hpp"
 #include "utils/assertion.hpp"
 

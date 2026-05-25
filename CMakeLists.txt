@@ -29,6 +29,7 @@ include(CheckSTL)
 include(CopyTargetProperty)
 include(XSDKMacros)
 include(Validation)
+include(GNUInstallDirs)
 
 # CMake Policies
 
@@ -58,6 +59,7 @@ if (DEFINED BUILD_SHARED_LIBS AND NOT BUILD_SHARED_LIBS)
 endif()
 
 option(PRECICE_FEATURE_MPI_COMMUNICATION "Enables MPI-based communication and running coupling tests." ON)
+option(PRECICE_BUILD_CORT_PLUGIN "Build the CoRT m2n communication plugin." ON)
 option(PRECICE_FEATURE_PETSC_MAPPING "Enable use of the PETSc linear algebra library for global-iterative RBF data mappings." ON)
 option(PRECICE_FEATURE_PYTHON_ACTIONS "Enable Python support for preCICE actions." ON)
 option(PRECICE_FEATURE_PROFILING_COMPRESSION "Enable profiling compression with LZMA." OFF)
@@ -86,6 +88,13 @@ if(PRECICE_FEATURE_PETSC_MAPPING AND NOT PRECICE_FEATURE_MPI_COMMUNICATION)
   message(FATAL_ERROR "Please enable MPI to use PETSC.")
 endif()
 
+if(PRECICE_BUILD_CORT_PLUGIN AND NOT PRECICE_FEATURE_MPI_COMMUNICATION)
+  message(WARNING "PRECICE_BUILD_CORT_PLUGIN requires PRECICE_FEATURE_MPI_COMMUNICATION. Disabling the CoRT plugin target.")
+  set(PRECICE_BUILD_CORT_PLUGIN OFF CACHE BOOL "Build the CoRT m2n communication plugin." FORCE)
+endif()
+
+set(PRECICE_CORT_PLUGIN_FILENAME "${CMAKE_SHARED_MODULE_PREFIX}precice-cort-plugin${CMAKE_SHARED_MODULE_SUFFIX}")
+
 set(PRECICE_CTEST_MPI_FLAGS "" CACHE STRING "Add additional flags to mpiexec for running tests via CTest.")
 
 include(XSDKOptions)
@@ -95,6 +104,7 @@ include(PrintHelper)
 print_configuration(
   ADDITIONAL
   "PRECICE_CONFIGURE_PACKAGE_GENERATION;Configure package generation"
+  "PRECICE_BUILD_CORT_PLUGIN;Build the CoRT m2n communication plugin"
   "PRECICE_CTEST_MPI_FLAGS;Additional CTest MPI Flags"
   )
 print_empty()
@@ -108,6 +118,12 @@ add_feature_info(PRECICE_FEATURE_MPI_COMMUNICATION PRECICE_FEATURE_MPI_COMMUNICA
 
    This feature can be enabled/disabled by setting the PRECICE_FEATURE_MPI_COMMUNICATION CMake option.
 ")
+add_feature_info(PRECICE_BUILD_CORT_PLUGIN PRECICE_BUILD_CORT_PLUGIN
+  "Builds the CoRT m2n communication backend as a runtime-loaded plugin.
+
+   The preCICE core keeps the use-cort-communication XML switch, but loads the
+   CoRT backend from libprecice-cort-plugin at runtime.
+  ")
 add_feature_info(PRECICE_FEATURE_PETSC_MAPPING PRECICE_FEATURE_PETSC_MAPPING
   "Enables the PETSc-powered radial basic function mappings.
 
@@ -377,7 +393,12 @@ set_target_properties(preciceCore PROPERTIES
   POSITION_INDEPENDENT_CODE YES
   )
 
-if(NOT Kokkos_VERSION OR NOT Kokkos_VERSION VERSION_LESS 4.4)
+if(PRECICE_BUILD_CORT_PLUGIN)
+  set_target_properties(preciceCore PROPERTIES
+    CXX_VISIBILITY_PRESET default
+    VISIBILITY_INLINES_HIDDEN NO
+  )
+elseif(NOT Kokkos_VERSION OR NOT Kokkos_VERSION VERSION_LESS 4.4)
   set_target_properties(preciceCore PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN YES
@@ -388,6 +409,10 @@ else()
     VISIBILITY_INLINES_HIDDEN NO
   )
 endif()
+
+target_compile_definitions(preciceCore PRIVATE
+  "PRECICE_CORT_PLUGIN_DEFAULT_PATH=\"${CMAKE_INSTALL_FULL_LIBDIR}/precice/plugins/${PRECICE_CORT_PLUGIN_FILENAME}\""
+  )
 
 # Setup release override options
 if(PRECICE_RELEASE_WITH_DEBUG_LOG)
@@ -528,7 +553,12 @@ set_target_properties(precice PROPERTIES
   SOVERSION ${preCICE_SOVERSION}
   )
 
-if(NOT Kokkos_VERSION OR NOT Kokkos_VERSION VERSION_LESS 4.4)
+if(PRECICE_BUILD_CORT_PLUGIN)
+  set_target_properties(precice PROPERTIES
+    CXX_VISIBILITY_PRESET default
+    VISIBILITY_INLINES_HIDDEN NO
+   )
+elseif(NOT Kokkos_VERSION OR NOT Kokkos_VERSION VERSION_LESS 4.4)
   set_target_properties(precice PROPERTIES
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN YES
@@ -551,6 +581,56 @@ target_link_libraries(precice PRIVATE preciceCore)
 
 # Sources Configuration
 include(${CMAKE_CURRENT_LIST_DIR}/src/sources.cmake)
+
+if(PRECICE_BUILD_CORT_PLUGIN)
+  add_library(precice-cort-plugin MODULE)
+  set_target_properties(precice-cort-plugin PROPERTIES
+    OUTPUT_NAME "precice-cort-plugin"
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED Yes
+    CXX_EXTENSIONS No
+    POSITION_INDEPENDENT_CODE YES
+    LIBRARY_OUTPUT_DIRECTORY "${preCICE_BINARY_DIR}"
+    )
+  target_sources(precice-cort-plugin
+    PRIVATE
+    plugins/cort/CoRTComFactory.cpp
+    plugins/cort/CoRTComFactory.hpp
+    plugins/cort/CoRTCommunication.cpp
+    plugins/cort/CoRTCommunication.hpp
+    plugins/cort/cort/DoubleDataExchange.cpp
+    plugins/cort/cort/DoubleDataExchange.hpp
+    plugins/cort/cort/NodeTopology.cpp
+    plugins/cort/cort/NodeTopology.hpp
+    plugins/cort/cort/Transport.hpp
+    )
+  target_include_directories(precice-cort-plugin
+    PRIVATE
+    ${preCICE_SOURCE_DIR}/src
+    ${preCICE_BINARY_DIR}/src
+    ${preCICE_SOURCE_DIR}/plugins/cort
+    )
+  target_compile_definitions(precice-cort-plugin
+    PRIVATE
+    BOOST_ALL_DYN_LINK
+    BOOST_ASIO_ENABLE_OLD_SERVICES
+    BOOST_GEOMETRY_DISABLE_DEPRECATED_03_WARNING
+    )
+  target_link_libraries(precice-cort-plugin
+    PRIVATE
+    Boost::boost
+    Eigen3::Eigen
+    MPI::MPI_CXX
+    fmtlib-static
+    )
+  if(APPLE)
+    target_link_options(precice-cort-plugin PRIVATE "-undefined" "dynamic_lookup")
+  endif()
+
+  target_compile_definitions(preciceCore PRIVATE
+    "PRECICE_CORT_PLUGIN_BUILD_PATH=\"$<TARGET_FILE:precice-cort-plugin>\""
+    )
+endif()
 
 # File Configuration
 configure_file("${PROJECT_SOURCE_DIR}/src/precice/impl/versions.hpp.in" "${PROJECT_BINARY_DIR}/src/precice/impl/versions.hpp" @ONLY)
@@ -644,6 +724,35 @@ IF (BUILD_TESTING)
   include(${CMAKE_CURRENT_LIST_DIR}/src/tests.cmake)
   include(${CMAKE_CURRENT_LIST_DIR}/tests/tests.cmake)
 
+  if(PRECICE_BUILD_CORT_PLUGIN)
+    add_library(precice-cort-abi-mismatch-plugin MODULE
+      plugins/cort/tests/CoRTAbiMismatchPlugin.cpp
+      )
+    set_target_properties(precice-cort-abi-mismatch-plugin PROPERTIES
+      OUTPUT_NAME "precice-cort-abi-mismatch-plugin"
+      CXX_STANDARD 17
+      CXX_STANDARD_REQUIRED Yes
+      CXX_EXTENSIONS No
+      POSITION_INDEPENDENT_CODE YES
+      LIBRARY_OUTPUT_DIRECTORY "${preCICE_BINARY_DIR}"
+      )
+    target_include_directories(precice-cort-abi-mismatch-plugin
+      PRIVATE
+      ${preCICE_SOURCE_DIR}/src
+      ${preCICE_BINARY_DIR}/src
+      )
+    target_link_libraries(precice-cort-abi-mismatch-plugin
+      PRIVATE
+      Eigen3::Eigen
+      fmtlib-static
+      MPI::MPI_CXX
+      )
+    add_dependencies(testprecice precice-cort-plugin precice-cort-abi-mismatch-plugin)
+    target_compile_definitions(testprecice PRIVATE
+      "PRECICE_CORT_ABI_MISMATCH_PLUGIN_PATH=\"$<TARGET_FILE:precice-cort-abi-mismatch-plugin>\""
+      )
+  endif()
+
   if(PRECICE_BUILD_UNITY)
     set_target_properties(testprecice PROPERTIES
       UNITY_BUILD Yes
@@ -723,6 +832,12 @@ install(TARGETS precice
   PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/precice
   INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/precice
   )
+
+if(PRECICE_BUILD_CORT_PLUGIN)
+  install(TARGETS precice-cort-plugin
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/precice/plugins
+    )
+endif()
 
 if(PRECICE_BUILD_TOOLS)
   install(TARGETS precice-tools precice-version precice-config-validate precice-config-doc

@@ -8,7 +8,7 @@
 #include "com/SharedPointer.hpp"
 #include "com/SocketCommunicationFactory.hpp"
 #include "logging/LogMacros.hpp"
-#include "m2n/CoRTComFactory.hpp"
+#include "m2n/CoRTPluginAdapter.hpp"
 #include "m2n/DistributedComFactory.hpp"
 #include "m2n/GatherScatterComFactory.hpp"
 #include "m2n/M2N.hpp"
@@ -96,7 +96,8 @@ M2NConfiguration::M2NConfiguration(xml::XMLTag &parent)
 
   XMLAttribute<bool> attrCoRT(ATTR_USE_CORT, false);
   attrCoRT.setDocumentation("Enable the CoRT communication aggregation mechanism (Innovation 2). "
-                            "Requires MPI.");
+                            "Requires MPI and loads the CoRT plugin at runtime. "
+                            "Set PRECICE_CORT_PLUGIN to override the plugin path.");
 
   auto attrFrom = XMLAttribute<std::string>("acceptor")
                       .setDocumentation(
@@ -208,7 +209,7 @@ void M2NConfiguration::xmlTagCallback(const xml::ConfigurationContext &context, 
     if (enforceGatherScatter) {
       distrFactory = std::make_shared<GatherScatterComFactory>(com);
     } else if (useCoRT) {
-      distrFactory = std::make_shared<CoRTComFactory>(comFactory);
+      distrFactory = createCoRTPluginComFactory(comFactory);
     } else {
       distrFactory = std::make_shared<PointToPointComFactory>(comFactory);
     }
